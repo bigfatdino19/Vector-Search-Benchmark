@@ -45,12 +45,6 @@ def recall_at_k(predicted, truth, k):
     return hits / (len(truth) * k)
 
 
-def one_recall_at_r(predicted, truth, r):
-    """1-Recall@R: fraction of queries whose true nearest neighbour is among the first R results."""
-    hits = sum(t[0] in p[:r] for p, t in zip(predicted, truth))
-    return hits / len(truth)
-
-
 def distance_ratio(predicted, truth, base, queries, k):
     """Distance to the k-th returned neighbour divided by the distance to the true k-th
     neighbour, averaged over all queries.
@@ -125,7 +119,6 @@ def evaluate(index, base, queries, truth, ks):
             "qps": round(len(queries) / query_time, 1),                   # queries per second
             "recall": round(recall_at_k(predicted, truth, k), 4),
             "ndcg": round(ndcg_at_k(predicted, truth, k), 4),
-            "one_recall_at_k": round(one_recall_at_r(predicted, truth, k), 4),  # 1-Recall@R, R = k
             "distance_ratio": round(distance_ratio(predicted, truth, base, queries, k), 4),
         })
     return rows

@@ -33,7 +33,7 @@ DATASETS = ["sift", "gist", "glove"]
 ID_FIELDS = ["dataset", "method"]
 RESULT_FIELDS = ["n_base", "n_queries", "dim", "k",
                  "build_time_s", "index_size_mb", "query_time_ms", "qps", "recall", "ndcg",
-                 "one_recall_at_k", "distance_ratio"]
+                 "distance_ratio"]
 
 
 def parse_args():
@@ -96,7 +96,7 @@ def main():
                 k = row["k"]
                 print(f"{row['method'] + ' ' + str(row['params']):<40} k={k:<3} build={row['build_time_s']}s "
                       f"size={size} qps={row['qps']} recall@{k}={row['recall']} "
-                      f"ndcg@{k}={row['ndcg']} 1-recall@{k}={row['one_recall_at_k']} "
+                      f"ndcg@{k}={row['ndcg']} "
                       f"dist_ratio={row['distance_ratio']}")
             # Saved straight away, so a crash in a later (slow) run does not lose these results.
             # TODO: Write code to plot graphs later
