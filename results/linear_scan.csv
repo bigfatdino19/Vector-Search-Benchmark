@@ -1,0 +1,4 @@
+dataset,method,n_base,n_queries,dim,k,build_time_s,index_size_mb,query_time_ms,qps,recall,ndcg,one_recall_at_k,distance_ratio
+sift,linear_scan,1000000,1000,128,10,0.1026,516.0,16.3645,61.1,0.9993,0.9998,1.0,1.0
+gist,linear_scan,1000000,1000,960,10,1.3528,3844.0,27.0076,37.0,0.9993,0.9997,1.0,1.0
+glove,linear_scan,399000,1000,50,10,0.013,81.4,5.3193,188.0,1.0,1.0,1.0,1.0
