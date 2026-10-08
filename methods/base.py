@@ -87,38 +87,45 @@ def ndcg_at_k(predicted, truth, k):
     return total / (len(truth) * ideal)
 
 
-def evaluate(index, base, queries, truth, k):
-    """Time build and query for one index and score it against the ground truth."""
+def evaluate(index, base, queries, truth, ks):
+    """Build one index, then time and score a search for every k in `ks`.
+
+    Returns one result row per k. The index is built only once, so build time and
+    index size are the same in every row; query time and accuracy are measured per k.
+    """
+    ks = [int(k) for k in np.atleast_1d(ks)]
     # truth only stores GT_K neighbours per query, so recall cannot be computed beyond that.
-    if not 1 <= k <= truth.shape[1]:
+    if not all(1 <= k <= truth.shape[1] for k in ks):
         raise ValueError(f"k must be between 1 and {truth.shape[1]}")
 
     # Index construction time.
     start = time.perf_counter()
     index.build(base)
     build_time = time.perf_counter() - start
-
-    # Search time for all queries in one call.
-    start = time.perf_counter()
-    predicted = np.asarray(index.query(queries, k))
-    query_time = time.perf_counter() - start
-
     size = index.index_size()
 
-    # One result row; the method file adds "dataset" and main.py writes it to the CSV.
-    return {
-        "method": index.name,
-        "params": index.params,
-        "n_base": len(base),
-        "n_queries": len(queries),
-        "dim": base.shape[1],
-        "k": k,
-        "build_time_s": round(build_time, 4),
-        "index_size_mb": None if size is None else round(size / 1e6, 2),
-        "query_time_ms": round(1000 * query_time / len(queries), 4),  # average time per query
-        "qps": round(len(queries) / query_time, 1),                   # queries per second
-        "recall": round(recall_at_k(predicted, truth, k), 4),
-        "ndcg": round(ndcg_at_k(predicted, truth, k), 4),
-        "one_recall_at_k": round(one_recall_at_r(predicted, truth, k), 4),  # 1-Recall@R with R = k
-        "distance_ratio": round(distance_ratio(predicted, truth, base, queries, k), 4),
-    }
+    rows = []
+    for k in ks:
+        # Search time for all queries in one call.
+        start = time.perf_counter()
+        predicted = np.asarray(index.query(queries, k))
+        query_time = time.perf_counter() - start
+
+        # One result row; the method file adds "dataset" and main.py writes it to the CSV.
+        rows.append({
+            "method": index.name,
+            "params": index.params,
+            "n_base": len(base),
+            "n_queries": len(queries),
+            "dim": base.shape[1],
+            "k": k,
+            "build_time_s": round(build_time, 4),
+            "index_size_mb": None if size is None else round(size / 1e6, 2),
+            "query_time_ms": round(1000 * query_time / len(queries), 4),  # average time per query
+            "qps": round(len(queries) / query_time, 1),                   # queries per second
+            "recall": round(recall_at_k(predicted, truth, k), 4),
+            "ndcg": round(ndcg_at_k(predicted, truth, k), 4),
+            "one_recall_at_k": round(one_recall_at_r(predicted, truth, k), 4),  # 1-Recall@R, R = k
+            "distance_ratio": round(distance_ratio(predicted, truth, base, queries, k), 4),
+        })
+    return rows

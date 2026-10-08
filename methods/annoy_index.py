@@ -18,8 +18,9 @@ class Annoy(BaseANN):
         raise NotImplementedError
 
 
-def run(dataset, k=10, max_base=None, max_queries=1000):
-    """Evaluate every setting in PARAM_GRID on `dataset`; returns one result row per setting."""
+def run(dataset, ks=(1, 10, 100), max_base=None, max_queries=1000):
+    """Evaluate every setting in PARAM_GRID on `dataset`; returns one result row per setting and k."""
     base, queries, truth = load_dataset(dataset, max_base, max_queries)
-    return [{"dataset": dataset, **evaluate(Annoy(**params), base, queries, truth, k)}
-            for params in PARAM_GRID]
+    return [{"dataset": dataset, **row}
+            for params in PARAM_GRID
+            for row in evaluate(Annoy(**params), base, queries, truth, ks)]

@@ -224,3 +224,6 @@ datasets/
 
 # Others
 .DS_Store
+
+# Results
+results/

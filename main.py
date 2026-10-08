@@ -1,11 +1,12 @@
 """Entry point: runs every similarity search method on every dataset and saves the results.
 
-Each method gets its own file, results/<method>.csv, with one row per dataset and
-parameter setting in that method's PARAM_GRID.
+Each method gets its own file, results/<method>.csv, with one row per dataset,
+parameter setting in that method's PARAM_GRID, and k.
 
 Usage (from the project root):
     python main.py                                  # all methods, all datasets
     python main.py --methods kd_tree --datasets sift
+    python main.py --k 10                           # one k only (default: 1 10 100)
     python main.py --max-base 100000 --max-queries 100   # small, fast run for debugging
 """
 import argparse
@@ -42,7 +43,8 @@ def parse_args():
     parser.add_argument("--datasets", nargs="+", choices=DATASETS, default=DATASETS)
     parser.add_argument("--methods", nargs="+", choices=list(METHODS), default=list(METHODS))
     # k in k-nearest-neighbours: how many neighbours each method returns per query.
-    parser.add_argument("--k", type=int, default=10, help="neighbours per query")
+    # Several values can be given; each index is built once and searched once per k.
+    parser.add_argument("--k", type=int, nargs="+", default=[1, 10, 100], help="neighbours per query")
     # Optional limits for quick test runs; None means use everything.
     parser.add_argument("--max-base", type=int, default=None, help="use only the first N base vectors")
     parser.add_argument("--max-queries", type=int, default=1000, help="use only the first N queries")
@@ -83,7 +85,7 @@ def main():
         for name in args.methods:
             try:
                 # Hand over to the method file; it loads the data and evaluates its PARAM_GRID.
-                results = METHODS[name].run(dataset, k=args.k, max_base=args.max_base,
+                results = METHODS[name].run(dataset, ks=args.k, max_base=args.max_base,
                                             max_queries=args.max_queries)
             except NotImplementedError:
                 # build()/query() are still stubs, so skip instead of crashing the whole run.
@@ -91,9 +93,10 @@ def main():
                 continue
             for row in results:
                 size = "n/a" if row["index_size_mb"] is None else f"{row['index_size_mb']}MB"
-                print(f"{row['method'] + ' ' + str(row['params']):<60} build={row['build_time_s']}s "
-                      f"size={size} qps={row['qps']} recall@{args.k}={row['recall']} "
-                      f"ndcg@{args.k}={row['ndcg']} 1-recall@{args.k}={row['one_recall_at_k']} "
+                k = row["k"]
+                print(f"{row['method'] + ' ' + str(row['params']):<40} k={k:<3} build={row['build_time_s']}s "
+                      f"size={size} qps={row['qps']} recall@{k}={row['recall']} "
+                      f"ndcg@{k}={row['ndcg']} 1-recall@{k}={row['one_recall_at_k']} "
                       f"dist_ratio={row['distance_ratio']}")
             # Saved straight away, so a crash in a later (slow) run does not lose these results.
             # TODO: Write code to plot graphs later
