@@ -8,11 +8,13 @@ Usage (from the project root):
     python main.py --methods kd_tree --datasets sift
     python main.py --k 10                           # one k only (default: 1 10 100)
     python main.py --max-base 100000 --max-queries 100   # small, fast run for debugging
+    python main.py --plot-only --methods kd_tree    # redraw graphs from the saved CSVs, no re-run
 """
 import argparse
 import csv
 from pathlib import Path
 
+import graph
 from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan
 
 # Name on the command line -> the method file. Each file exposes run(), which
@@ -50,6 +52,9 @@ def parse_args():
     parser.add_argument("--max-queries", type=int, default=1000, help="use only the first N queries")
     # Folder the per-method CSVs are written to.
     parser.add_argument("--out-dir", type=Path, default=Path("results"))
+    # Folder the graphs are written to, and a switch to only redraw them from the saved CSVs.
+    parser.add_argument("--fig-dir", type=Path, default=Path("figures"))
+    parser.add_argument("--plot-only", action="store_true", help="skip the runs, only draw the graphs")
     return parser.parse_args()
 
 
@@ -80,7 +85,7 @@ def save_results(method, dataset, results, out_dir):
 
 def main():
     args = parse_args()
-    for dataset in args.datasets:
+    for dataset in [] if args.plot_only else args.datasets:
         print(f"\n=== {dataset} ===")
         for name in args.methods:
             try:
@@ -99,9 +104,13 @@ def main():
                       f"ndcg@{k}={row['ndcg']} "
                       f"dist_ratio={row['distance_ratio']}")
             # Saved straight away, so a crash in a later (slow) run does not lose these results.
-            # TODO: Write code to plot graphs later
             path = save_results(name, dataset, results, args.out_dir)
             print(f"saved {len(results)} rows to {path}")
+
+    # Graphs are drawn from the CSVs (see graph.py), so they cover every dataset saved so far.
+    print()
+    for name in args.methods:
+        graph.plot(name, args.out_dir, args.fig_dir)
 
 
 if __name__ == "__main__":
