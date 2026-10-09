@@ -13,7 +13,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan
+from methods import annoy_index, ball_tree, ivf, ivf_pq, kd_tree, linear_scan, pq
 
 # Name on the command line -> the method file. Each file exposes run(), which
 # loads the data itself (via data.py) and returns one result row per parameter setting.
@@ -22,6 +22,8 @@ METHODS = {
     "kd_tree": kd_tree,
     "ball_tree": ball_tree,
     "annoy": annoy_index,
+    "ivf": ivf,
+    "pq": pq,
     "ivf_pq": ivf_pq,
 }
 # Dataset names understood by data.load_dataset().
