@@ -124,8 +124,6 @@ GRAPHS = {
     "kd_tree": plot_kd_tree,
     "ball_tree": plot_ball_tree,
     "annoy": plot_annoy,
-    "ivf": plot_ivf,
-    "pq": plot_pq,
     "ivf_pq": plot_ivf_pq,
 }
 
