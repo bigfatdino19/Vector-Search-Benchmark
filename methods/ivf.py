@@ -8,11 +8,13 @@ from .base import BaseANN, evaluate
 # Parameter settings to sweep; each dict is passed to IVF() as keyword arguments.
 #   nlist   number of clusters the base vectors are split into
 #   nprobe  number of nearest clusters searched per query (nprobe = nlist is an exact search)
-PARAM_GRID = [
-    {"nlist": 1024, "nprobe": 1},
-    {"nlist": 1024, "nprobe": 8},
-    {"nlist": 1024, "nprobe": 64},
-]
+# Every nlist is combined with every nprobe. One extra setting searches all the clusters
+# (nprobe = nlist): it returns the exact neighbours, so it shows what clustering costs
+# when it saves no work.
+NLIST_VALUES = [256, 1024, 4096]
+NPROBE_VALUES = [1, 8, 64]
+
+PARAM_GRID = [{"nlist": nlist, "nprobe": nprobe} for nlist in NLIST_VALUES for nprobe in NPROBE_VALUES]
 
 
 class IVF(BaseANN):

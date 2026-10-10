@@ -15,7 +15,7 @@ import csv
 from pathlib import Path
 
 import graph
-from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan
+from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan, pq, ivf
 
 # Name on the command line -> the method file. Each file exposes run(), which
 # loads the data itself (via data.py) and returns one result row per parameter setting.
