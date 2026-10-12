@@ -156,8 +156,90 @@ def plot_ball_tree(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
     raise NotImplementedError
 
 
+def annoy_speed_vs_accuracy(rows, path, trees=(10, 50, 200), target=0.95):
+    """One panel per dataset: queries per second against recall, one line per n_trees.
+
+    Each point is one search_k (labelled), so a line shows the speed/accuracy tradeoff of
+    searching more candidates. The dashed line is the target recall; the circled point is the
+    fastest setting that reaches it (none is circled if no setting does).
+    """
+    datasets = [d for d in DATASETS if any(row["dataset"] == d for row in rows)]
+    markers = dict(zip(trees, "o^s"))
+    shades = dict(zip(trees, (0.45, 0.7, 1.0)))   # more trees = darker line
+    # search_k = -1 means "Annoy's default", which has no fixed value, so it is left out.
+    rows = [row for row in rows if row["search_k"] > 0 and row["n_trees"] in trees]
+    ticks = {500: "500", 5000: "5k", 50000: "50k"}  # only these points get a label
+
+    fig, axes = plt.subplots(1, len(datasets), figsize=(14, 4.4), sharey=True, layout="constrained")
+    for ax, dataset in zip(axes, datasets):
+        name, colour, _ = DATASETS[dataset]
+        shown = [row for row in rows if row["dataset"] == dataset]
+        for n in trees:
+            points = sorted((row["recall"], row["qps"], row["search_k"])
+                            for row in shown if row["n_trees"] == n)
+            ax.plot([p[0] for p in points], [p[1] for p in points], color=colour, alpha=shades[n],
+                    marker=markers[n], linewidth=2, markersize=7, label=f"n_trees = {n}")
+            for recall, qps, search_k in points:
+                if search_k in ticks:
+                    ax.annotate(ticks[search_k], (recall, qps), textcoords="offset points",
+                                xytext=(5, 5), fontsize=8, color="#555555")
+        ax.axvline(target, color="#898781", linestyle="--", linewidth=1.2)
+        reached = [row for row in shown if row["recall"] >= target]
+        if reached:
+            best = max(reached, key=lambda row: row["qps"])
+            ax.scatter([best["recall"]], [best["qps"]], s=420, facecolors="none",
+                       edgecolors="black", linewidths=1.6, zorder=5)
+        else:
+            ax.text(0.03, 0.04, f"no setting reaches recall {target}", transform=ax.transAxes,
+                    fontsize=8, color="#555555")
+        ax.set_yscale("log")
+        ax.set_xlim(0, 1.05)
+        ax.set_xlabel(f"Recall@{REPORT_K}")
+        ax.set_title(name, loc="left", fontweight="bold")
+        handles, labels = ax.get_legend_handles_labels()
+        if reached:
+            # A fixed-size handle; the circle drawn on the plot is too big for the legend.
+            handles.append(plt.Line2D([], [], marker="o", linestyle="", markersize=11,
+                                      markerfacecolor="none", markeredgecolor="black",
+                                      markeredgewidth=1.6))
+            labels.append(f"fastest at recall {target}")
+        ax.legend(handles, labels, loc="upper right", fontsize=8)
+    axes[0].set_ylabel("Queries per second")
+    fig.suptitle(f"Annoy: speed against accuracy (k = {REPORT_K}; point labels are search_k, "
+                 f"dashed line is recall {target})", fontweight="bold")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
+    return Path(path)
+
+
 def plot_annoy(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
-    raise NotImplementedError
+    """Five charts: the speed/accuracy tradeoff, then what more trees and more candidates cost and buy."""
+    rows = load_results("annoy", results_dir)
+    if not rows:
+        return []
+    fig_dir = Path(fig_dir)
+    # search_k = -1 means Annoy's default (n_trees * k); it has no fixed value, so the
+    # n_trees charts use only those rows and the search_k charts leave them out.
+    default_k = [row for row in rows if row["search_k"] == -1]
+    # The search_k charts hold n_trees fixed at this value.
+    fixed_trees = 50
+    fixed = [row for row in rows if row["n_trees"] == fixed_trees and row["search_k"] > 0]
+    return [
+        annoy_speed_vs_accuracy(rows, fig_dir / "annoy_speed_vs_accuracy.png"),
+        line_chart(default_k, "n_trees", "recall", "n_trees", f"Recall@{REPORT_K}",
+                   "Annoy: recall vs number of trees",
+                   fig_dir / "annoy_recall_vs_trees.png"),
+        line_chart(default_k, "n_trees", "build_time_s", "n_trees", "Build time (s)",
+                   "Annoy: build time vs number of trees",
+                   fig_dir / "annoy_build_time_vs_trees.png", logy=True),
+        line_chart(fixed, "search_k", "recall", "search_k (candidates checked)", f"Recall@{REPORT_K}",
+                   f"Annoy: recall vs search_k (n_trees={fixed_trees})",
+                   fig_dir / "annoy_recall_vs_search_k.png"),
+        line_chart(fixed, "search_k", "qps", "search_k (candidates checked)", "Queries per second",
+                   f"Annoy: QPS vs search_k (n_trees={fixed_trees})",
+                   fig_dir / "annoy_qps_vs_search_k.png", logy=True),
+    ]
 
 
 def plot_ivf_pq(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
