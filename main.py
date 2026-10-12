@@ -15,7 +15,7 @@ import csv
 from pathlib import Path
 
 import graph
-from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan
+from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan, pq, ivf
 
 # Name on the command line -> the method file. Each file exposes run(), which
 # loads the data itself (via data.py) and returns one result row per parameter setting.
@@ -24,6 +24,8 @@ METHODS = {
     "kd_tree": kd_tree,
     "ball_tree": ball_tree,
     "annoy": annoy_index,
+    "ivf": ivf,
+    "pq": pq,
     "ivf_pq": ivf_pq,
 }
 # Dataset names understood by data.load_dataset().
@@ -58,17 +60,32 @@ def parse_args():
     return parser.parse_args()
 
 
+def _number(value):
+    """CSV cells are strings; compare numbers as numbers so "10" matches 10."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def save_results(method, dataset, results, out_dir):
     """Write one method's rows for one dataset into <out_dir>/<method>.csv.
 
-    Rows already in the file for other datasets are kept, so datasets can be run one at a
-    time; rows for `dataset` are replaced by the new ones.
+    Rows already in the file are kept. A new row replaces an old one only when it has the
+    same dataset, k and parameters, so extra parameter settings can be added to a dataset
+    without re-running (or losing) the ones that are already saved.
     """
     path = out_dir / f"{method}.csv"
+    param_names = list(results[0]["params"]) if results else []
+
+    def key(row):
+        return (row["dataset"], _number(row["k"]), *(_number(row.get(p)) for p in param_names))
+
+    replaced = {key({**row, **row["params"]}) for row in results}
     kept = []
     if path.exists():
         with open(path, newline="") as f:
-            kept = [row for row in csv.DictReader(f) if row["dataset"] != dataset]
+            kept = [row for row in csv.DictReader(f) if key(row) not in replaced]
     # Spread the params dict into one column per parameter so it is easy to filter and plot.
     new = [{**{key: value for key, value in row.items() if key != "params"}, **row["params"]}
            for row in results]
