@@ -81,11 +81,12 @@ def ndcg_at_k(predicted, truth, k):
     return total / (len(truth) * ideal)
 
 
-def evaluate(index, base, queries, truth, ks):
+def evaluate(index, base, queries, truth, ks, prebuilt=None):
     """Build one index, then time and score a search for every k in `ks`.
 
     Returns one result row per k. The index is built only once, so build time and
     index size are the same in every row; query time and accuracy are measured per k.
+    `prebuilt` is an optional (build_time_s, size_bytes) pair for an index that is already built.
     """
     ks = [int(k) for k in np.atleast_1d(ks)]
     # truth only stores GT_K neighbours per query, so recall cannot be computed beyond that.
@@ -94,9 +95,14 @@ def evaluate(index, base, queries, truth, ks):
 
     # Index construction time.
     start = time.perf_counter()
-    index.build(base)
-    build_time = time.perf_counter() - start
-    size = index.index_size()
+    if prebuilt is None:
+        index.build(base)
+        build_time = time.perf_counter() - start
+        size = index.index_size()
+    else:
+        # The index was already built (and timed) by the caller, e.g. to try several search
+        # settings on one build; reuse its build time and size.
+        build_time, size = prebuilt
 
     rows = []
     for k in ks:
