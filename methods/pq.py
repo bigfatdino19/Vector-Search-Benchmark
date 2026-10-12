@@ -18,7 +18,7 @@ from .base import BaseANN, evaluate
 # Every m is combined with every nbits, all with asymmetric search. The most accurate
 # combination (largest m, nbits = 8) is also run with symmetric search for comparison.
 M_VALUES = {"sift": [8, 16, 32], "gist": [60, 120, 240], "glove": [5, 10, 25]}
-NBITS_VALUES = [4, 8]
+NBITS_VALUES = [4, 8, 12]
 
 PARAM_GRID = {
     dataset: [{"m": m, "nbits": nbits, "symmetric": False} for m in ms for nbits in NBITS_VALUES]
