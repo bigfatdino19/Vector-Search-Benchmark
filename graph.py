@@ -7,6 +7,7 @@ file can also be run on its own to redraw from the saved CSVs without re-running
     python graph.py ivf pq     # only these methods
 
 Every graph is one chart that answers one question, with one line per dataset.
+IVF-PQ uses scatter plots: each point is a parameter setting, coloured by dataset.
 """
 import csv
 import sys
@@ -20,7 +21,7 @@ import matplotlib.pyplot as plt
 RESULTS_DIR = Path("results")
 FIG_DIR = Path("figures")
 
-# All graphs are drawn for this k.
+# Default k for plots that show one neighbour count.
 REPORT_K = 10
 
 # Each dataset keeps the same label, colour and marker in every graph.
@@ -48,13 +49,13 @@ def _number(value):
 
 
 def load_results(method, results_dir=RESULTS_DIR, k=REPORT_K):
-    """Rows of results/<method>.csv at one k, as dicts with numeric values ([] if no file)."""
+    """Read numeric CSV rows at one k, or all k values when k=None."""
     path = Path(results_dir) / f"{method}.csv"
     if not path.exists():
         return []
     with open(path, newline="") as f:
         rows = [{key: _number(value) for key, value in row.items()} for row in csv.DictReader(f)]
-    return [row for row in rows if row["k"] == k]
+    return rows if k is None else [row for row in rows if row["k"] == k]
 
 
 def add_speedup(rows, results_dir=RESULTS_DIR):
@@ -99,7 +100,52 @@ def line_chart(rows, x, y, xlabel, ylabel, title, path, logy=False, hline=None):
 
 
 def plot_linear_scan(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
-    raise NotImplementedError
+    """Grouped query-time bars for all saved k; one size/build bar per dataset."""
+    rows = load_results("linear_scan", results_dir, k=None)
+    if not rows:
+        return []
+    datasets = [dataset for dataset in DATASETS if any(r["dataset"] == dataset for r in rows)]
+    ks = sorted({row["k"] for row in rows})
+    by_dataset = {dataset: next(r for r in rows if r["dataset"] == dataset)
+                  for dataset in datasets}
+    labels = [f"{dataset.upper()} ({by_dataset[dataset]['dim']}-d)\n"
+              f"n={by_dataset[dataset]['n_base']:,}" for dataset in datasets]
+    saved = []
+    for metric, ylabel, filename in [
+        ("query_time_ms", "Query time (ms/query)", "query_time"),
+        ("index_size_mb", "Index size (MB)", "index_size"),
+        ("build_time_s", "Build time (s)", "build_time"),
+    ]:
+        fig, ax = plt.subplots(figsize=(8, 4.5), layout="constrained")
+        if metric == "query_time_ms":
+            width = 0.8 / len(ks)
+            hatches = ["", "//", "xx", "..", "\\\\"]
+            for j, k in enumerate(ks):
+                points = [(i, row) for i, dataset in enumerate(datasets)
+                          for row in rows if row["dataset"] == dataset and row["k"] == k]
+                ax.bar([i + (j - (len(ks) - 1) / 2) * width for i, row in points],
+                       [row[metric] for i, row in points], width=width,
+                       color=[DATASETS[row["dataset"]][1] for i, row in points],
+                       hatch=hatches[j % len(hatches)], edgecolor="#333333",
+                       linewidth=0.5, label=f"k={k}")
+            ax.legend(title="Neighbours")
+        else:
+            # Build time and size are repeated for each k in the benchmark CSV.
+            points = [(i, by_dataset[d]) for i, d in enumerate(datasets)
+                      if by_dataset[d].get(metric) is not None]
+            ax.bar([i for i, row in points], [row[metric] for i, row in points],
+                   color=[DATASETS[row["dataset"]][1] for i, row in points], width=0.65)
+        ax.set_xticks(range(len(datasets)), labels)
+        ax.set_ylabel(ylabel)
+        ax.set_title(f"Linear scan: {ylabel.split(' (')[0].lower()}",
+                     loc="left", fontweight="bold")
+        ax.set_ylim(bottom=0)
+        path = Path(fig_dir) / "linear_scan" / f"linear_scan_{filename}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=200, facecolor="white")
+        plt.close(fig)
+        saved.append(path)
+    return saved
 
 
 def plot_kd_tree(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
@@ -115,7 +161,51 @@ def plot_annoy(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
 
 
 def plot_ivf_pq(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
-    raise NotImplementedError
+    """Plot the regular IVF-PQ grid at REPORT_K; every point is one setting.
+
+    Scatter plots keep configurations with different nlist/m/nbits/nprobe
+    separate instead of connecting them into an arbitrary parameter curve.
+    """
+    rows = load_results("ivf_pq", results_dir)
+    if not rows:
+        return []
+    saved = []
+    charts = [
+        ("qps", "Queries per second (higher is better)", "recall_vs_qps", True),
+        ("index_size_mb", "Index size (MB)", "recall_vs_size", False),
+        ("build_time_s", "Build time (s)", "recall_vs_build_time", False),
+    ]
+    for x, xlabel, filename, logx in charts:
+        fig, ax = plt.subplots(figsize=(7.5, 4), layout="constrained")
+        for dataset in dict.fromkeys(row["dataset"] for row in rows):
+            label, colour, marker = DATASETS[dataset]
+            points = [row for row in rows if row["dataset"] == dataset
+                      and isinstance(row.get(x), (int, float))
+                      and isinstance(row.get("recall"), (int, float))
+                      and (not logx or row[x] > 0)]
+            if points:
+                ax.scatter([row[x] for row in points], [row["recall"] for row in points],
+                           color=colour, marker=marker, s=45, alpha=0.75, label=label)
+        if logx:
+            ax.set_xscale("log")
+        ax.set_ylim(0, 1.05)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(f"Recall@{REPORT_K}")
+        ax.set_title("IVF-PQ: accuracy and " + {
+            "qps": "search throughput", "index_size_mb": "storage",
+            "build_time_s": "build cost",
+        }[x], loc="left", fontweight="bold")
+        ax.text(0.01, 0.02, "Each point = one parameter setting", transform=ax.transAxes,
+                fontsize=8, color="#555555")
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            fig.legend(handles, labels, loc="outside right upper")
+        path = Path(fig_dir) / "ivf_pq" / f"ivf_pq_{filename}_k{REPORT_K}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=200, facecolor="white")
+        plt.close(fig)
+        saved.append(path)
+    return saved
 
 
 # Method name (as used by main.py and the CSV file names) -> its graph function.
