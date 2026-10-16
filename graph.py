@@ -7,6 +7,7 @@ file can also be run on its own to redraw from the saved CSVs without re-running
     python graph.py ivf pq     # only these methods
 
 Every graph is one chart that answers one question, with one line per dataset.
+The two exact trees share a comparison chart per measure, one panel per dataset.
 IVF-PQ uses scatter plots: each point is a parameter setting, coloured by dataset.
 """
 import copy
@@ -74,10 +75,11 @@ def add_speedup(rows, results_dir=RESULTS_DIR):
     return True
 
 
-def line_chart(rows, x, y, xlabel, ylabel, title, path, logy=False, hline=None):
+def line_chart(rows, x, y, xlabel, ylabel, title, path, logy=False, hline=None, ylim=None):
     """One line per dataset of row[y] against row[x]; x is drawn on a log-2 axis.
 
     hline     optional (value, label): a dashed horizontal reference line
+    ylim      optional (low, high): a fixed y range instead of the automatic one
     """
     fig, ax = plt.subplots(figsize=(7.5, 4), layout="constrained")
     for dataset in dict.fromkeys(row["dataset"] for row in rows):
@@ -92,6 +94,8 @@ def line_chart(rows, x, y, xlabel, ylabel, title, path, logy=False, hline=None):
     ax.minorticks_off()
     if logy:
         ax.set_yscale("log")
+    if ylim:
+        ax.set_ylim(*ylim)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title, loc="left", fontweight="bold")
@@ -151,12 +155,135 @@ def plot_linear_scan(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
     return saved
 
 
+# ---------------------------------------------------------------- KD-tree and ball tree
+
+TREE_LABELS = {"kd_tree": "KD-tree", "ball_tree": "Ball tree"}
+TREE_XLABEL = "leaf_size (largest number of vectors in one leaf)"
+# Both trees are exact, so every leaf_size reaches full recall (up to distance ties) and the
+# best setting is simply the fastest one. The floor only guards against a damaged result.
+TREE_MIN_RECALL = 0.95
+# Line shade and marker of each tree when both are drawn in one panel (tree_comparison_chart).
+TREE_STYLES = {"kd_tree": (1.0, "o"), "ball_tree": (0.5, "^")}
+
+
+def _tree_rows(method, results_dir):
+    """Rows of one tree method at REPORT_K, in dataset order, with an index_overhead column.
+
+    index_overhead  index size divided by the size of the raw float32 vectors (n_base * dim * 4
+                    bytes), so the three datasets share one axis. 1.0 means the index is exactly
+                    as big as the data; the excess is the tree's node and bound arrays.
+    """
+    rows = load_results(method, results_dir)
+    rows.sort(key=lambda row: list(DATASETS).index(row["dataset"]))
+    for row in rows:
+        row["index_overhead"] = row["index_size_mb"] / (row["n_base"] * row["dim"] * 4 / 1e6)
+    return rows
+
+
+def tree_comparison_chart(rows_by_method, metric, ylabel, title, path, hline=None):
+    """row[metric] against leaf_size for both trees, one panel per dataset.
+
+    rows_by_method  {method: rows}; the KD-tree is drawn in the dataset's full colour and the
+                    ball tree in a lighter shade, with its own marker (TREE_STYLES)
+    Each panel has its own y axis, because the datasets differ by a factor of 50 or more.
+    """
+    datasets = [dataset for dataset in DATASETS
+                if any(row["dataset"] == dataset for rows in rows_by_method.values() for row in rows)]
+    fig, axes = plt.subplots(1, len(datasets), figsize=(4 * len(datasets), 4.2),
+                             layout="constrained", squeeze=False)
+    for ax, dataset in zip(axes[0], datasets):
+        label, colour, _ = DATASETS[dataset]
+        for method, rows in rows_by_method.items():
+            weight, marker = TREE_STYLES[method]
+            points = sorted((row["leaf_size"], row[metric]) for row in rows if row["dataset"] == dataset)
+            ax.plot(*zip(*points), color=_shade(colour, weight), marker=marker, linewidth=2,
+                    markersize=7, label=TREE_LABELS[method])
+        if hline:
+            ax.axhline(hline[0], color="#898781", linestyle="--", linewidth=1.2, label=hline[1])
+        ticks = sorted({row["leaf_size"] for rows in rows_by_method.values() for row in rows})
+        ax.set_xscale("log", base=2)
+        ax.set_xticks(ticks, [f"{tick:g}" for tick in ticks])
+        ax.minorticks_off()
+        ax.set_xlabel("leaf_size")
+        ax.set_title(label, loc="left", fontweight="bold")
+    # One legend beside the panels, so it never covers a line. The colour differs per panel,
+    # so the legend shows the first panel's entries in grey (as in pq_param_chart).
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    handles = [copy.copy(handle) for handle in handles]
+    greys = [_shade("#3d3c39", TREE_STYLES[method][0]) for method in rows_by_method] + ["#898781"]
+    for handle, grey in zip(handles, greys):
+        handle.set_color(grey)
+        handle.set_markeredgecolor(grey)
+    axes[0][0].set_ylabel(ylabel)
+    fig.legend(handles, labels, loc="outside right upper", fontsize=9)
+    fig.suptitle(title, x=0.01, ha="left", fontweight="bold")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
+    return Path(path)
+
+
+def _plot_tree(method, results_dir, fig_dir):
+    """One tree method: every measure against leaf_size, then its fastest setting per dataset."""
+    rows = _tree_rows(method, results_dir)
+    if not rows:
+        return []
+    has_speedup = add_speedup(rows, results_dir)
+    label = TREE_LABELS[method]
+    fig_dir = Path(fig_dir) / method  # each tree gets its own sub-folder
+    saved = [
+        line_chart(rows, "leaf_size", "qps", TREE_XLABEL, "Queries per second",
+                   f"{label}: QPS against leaf_size (k = {REPORT_K})",
+                   fig_dir / f"{method}_qps_vs_leaf_size.png", logy=True),
+        line_chart(rows, "leaf_size", "build_time_s", TREE_XLABEL, "Build time (s)",
+                   f"{label}: build time against leaf_size",
+                   fig_dir / f"{method}_build_time_vs_leaf_size.png", logy=True),
+        line_chart(rows, "leaf_size", "index_overhead", TREE_XLABEL, "Index size / raw data size",
+                   f"{label}: index overhead against leaf_size",
+                   fig_dir / f"{method}_index_overhead_vs_leaf_size.png", hline=(1.0, "raw data")),
+        # Exact search: the lines sit at 1.0, so the y range is fixed to keep tie noise flat.
+        line_chart(rows, "leaf_size", "recall", TREE_XLABEL, f"Recall@{REPORT_K}",
+                   f"{label}: recall@{REPORT_K} against leaf_size",
+                   fig_dir / f"{method}_recall_vs_leaf_size.png", hline=(1.0, "exact"), ylim=(0.95, 1.01)),
+    ]
+    if has_speedup:
+        saved.append(line_chart(
+            rows, "leaf_size", "speedup", TREE_XLABEL, "Speed-up over linear scan (x)",
+            f"{label}: speed-up over linear scan (k = {REPORT_K})",
+            fig_dir / f"{method}_speedup_vs_leaf_size.png", logy=True, hline=(1.0, "linear scan")))
+    best = best_rows(rows, TREE_MIN_RECALL)
+    saved.append(best_chart(best, has_speedup, fig_dir / f"{method}_best.png", ("leaf_size",),
+                            f"{label}: fastest leaf_size per dataset (k = {REPORT_K})"))
+    return saved
+
+
+def _plot_tree_comparison(results_dir, fig_dir):
+    """KD-tree against ball tree on every dataset; drawn only when both result files exist."""
+    rows_by_method = {method: _tree_rows(method, results_dir) for method in TREE_LABELS}
+    if not all(rows_by_method.values()):
+        return []
+    fig_dir = Path(fig_dir) / "trees"  # shared by both trees
+    return [
+        tree_comparison_chart(rows_by_method, "qps", "Queries per second",
+                              f"KD-tree against ball tree: QPS (k = {REPORT_K})",
+                              fig_dir / "trees_qps_vs_leaf_size.png"),
+        tree_comparison_chart(rows_by_method, "build_time_s", "Build time (s)",
+                              "KD-tree against ball tree: build time",
+                              fig_dir / "trees_build_time_vs_leaf_size.png"),
+        tree_comparison_chart(rows_by_method, "index_overhead", "Index size / raw data size",
+                              "KD-tree against ball tree: index overhead",
+                              fig_dir / "trees_index_overhead_vs_leaf_size.png", hline=(1.0, "raw data")),
+    ]
+
+
 def plot_kd_tree(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
-    raise NotImplementedError
+    """KD-tree graphs, plus the comparison with the ball tree (either tree keeps it current)."""
+    return _plot_tree("kd_tree", results_dir, fig_dir) + _plot_tree_comparison(results_dir, fig_dir)
 
 
 def plot_ball_tree(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
-    raise NotImplementedError
+    """Ball tree graphs, plus the comparison with the KD-tree (either tree keeps it current)."""
+    return _plot_tree("ball_tree", results_dir, fig_dir) + _plot_tree_comparison(results_dir, fig_dir)
 
 
 def plot_annoy(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
@@ -268,12 +395,17 @@ def tradeoff_chart(rows, best, path, series, point, title, y="qps", ylabel="Quer
     return Path(path)
 
 
+def _count_label(value):
+    """Bar label for a count such as QPS: no decimals from 100 up, one decimal below (1.6, not 2)."""
+    return f"{value:,.0f}" if value >= 100 else f"{value:.1f}"
+
+
 def best_chart(best, has_speedup, path, params, title):
     """Bar charts comparing each dataset's best setting, one panel per measure.
 
     params  the parameter columns named under each bar, e.g. ("nlist", "nprobe")
     """
-    panels = [("qps", "Queries per second", "{:,.0f}"), ("recall", f"Recall@{REPORT_K}", "{:.3f}"),
+    panels = [("qps", "Queries per second", _count_label), ("recall", f"Recall@{REPORT_K}", "{:.3f}"),
               ("build_time_s", "Build time (s)", "{:.1f}"), ("index_size_mb", "Index size (MB)", "{:,.0f}")]
     if has_speedup:
         panels.insert(1, ("speedup", "Speed-up over linear scan (x)", "{:.3g}x"))
@@ -283,7 +415,8 @@ def best_chart(best, has_speedup, path, params, title):
     colours = [DATASETS[dataset][1] for dataset in best]
     for ax, (key, ylabel, fmt) in zip(axes, panels):
         bars = ax.bar(names, [row[key] for row in best.values()], color=colours, width=0.6)
-        ax.bar_label(bars, labels=[fmt.format(row[key]) for row in best.values()], padding=2, fontsize=9)
+        ax.bar_label(bars, labels=[fmt(row[key]) if callable(fmt) else fmt.format(row[key])
+                                   for row in best.values()], padding=2, fontsize=9)
         ax.set_title(ylabel, loc="left", fontsize=10, fontweight="bold")
         ax.grid(axis="x", visible=False)
         ax.tick_params(axis="x", labelsize=8)
