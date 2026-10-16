@@ -9,9 +9,9 @@ from .base import BaseANN, evaluate
 # nlist / nprobe control clustering and how many clusters a query searches.
 # m / nbits control compression; m must divide the dataset's dimension.
 NLIST_VALUES = [256, 1024, 4096]
-NPROBE_VALUES = [1, 8, 64]
-M_VALUES = {"sift": [8, 16, 32], "gist": [60, 120, 240], "glove": [5, 10, 25]}
-NBITS_VALUES = [4, 8]
+NPROBE_VALUES = [1, 4, 8, 16, 32, 64]
+M_VALUES = {"sift": [8, 16, 32, 64], "gist": [60, 120, 240], "glove": [5, 10, 25]}
+NBITS_VALUES = [4, 6, 8]
 
 PARAM_GRID = {
     dataset: [{"nlist": nlist, "m": m, "nbits": nbits, "nprobe": nprobe}

@@ -13,6 +13,8 @@ Usage (from the project root):
 import argparse
 import csv
 from pathlib import Path
+import subprocess
+import sys
 
 import graph
 from methods import annoy_index, ball_tree, ivf_pq, kd_tree, linear_scan, pq, ivf
@@ -57,6 +59,8 @@ def parse_args():
     # Folder the graphs are written to, and a switch to only redraw them from the saved CSVs.
     parser.add_argument("--fig-dir", type=Path, default=Path("figures"))
     parser.add_argument("--plot-only", action="store_true", help="skip the runs, only draw the graphs")
+    parser.add_argument("--skip-ablation", action="store_true",
+                        help="skip the IVF-PQ ablation study (otherwise included when ivf_pq is selected)")
     return parser.parse_args()
 
 
@@ -128,6 +132,20 @@ def main():
     print()
     for name in args.methods:
         graph.plot(name, args.out_dir, args.fig_dir)
+
+    if "ivf_pq" in args.methods and not args.skip_ablation:
+        # Run the standalone entry point so its validation and thread settings apply.
+        command = [sys.executable, "-m", "experiments.ivf_pq_ablation",
+                   "--datasets", *args.datasets,
+                   "--k", *map(str, args.k),
+                   "--max-queries", str(args.max_queries),
+                   "--out-dir", str(args.out_dir / "ivf_pq_ablation"),
+                   "--fig-dir", str(args.fig_dir / "ivf_pq_ablation")]
+        if args.max_base is not None:
+            command.extend(["--max-base", str(args.max_base)])
+        if args.plot_only:
+            command.append("--plot-only")
+        subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":
