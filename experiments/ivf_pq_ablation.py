@@ -9,6 +9,7 @@ import faiss
 import numpy as np
 
 from data import load_dataset
+from graph import plot_ivf_pq_ablation
 from methods.base import recall_at_k, ndcg_at_k, distance_ratio
 from methods.ivf import IVF
 from methods.ivf_pq import IVFPQ, M_VALUES
@@ -16,10 +17,6 @@ from methods.linear_scan import LinearScan
 from methods.pq import PQ
 
 EXPERIMENTS = ("components", "nprobe", "nlist", "m", "nbits", "exhaustive", "nlist_ratio")
-METRICS = {
-    "recall": "Recall", "query_time_ms": "Query time (ms/query)",
-    "index_size_mb": "Index size (MB)", "build_time_s": "Build time (s)",
-}
 REFERENCE = {
     "sift": dict(nlist=1024, m=64, nbits=8, nprobe=8),
     "gist": dict(nlist=1024, m=240, nbits=8, nprobe=64),
@@ -117,46 +114,6 @@ def run_study(dataset, args):
     return path
 
 
-def plot_results(path, fig_dir):
-    """Plot the saved measurements for each configuration."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    with path.open(newline="") as stream:
-        rows = list(csv.DictReader(stream))
-    saved = []
-    for experiment in dict.fromkeys(row["experiment"] for row in rows):
-        for k in sorted({int(row["k"]) for row in rows}):
-            selected = [r for r in rows if r["experiment"] == experiment and int(r["k"]) == k]
-            values = list(dict.fromkeys(r["value"] for r in selected))
-            categorical = experiment in ("components", "exhaustive")
-            if not categorical:
-                values.sort(key=float)
-            fig, axes = plt.subplots(2, 2, figsize=(10, 7), layout="constrained")
-            for ax, (metric, label) in zip(axes.flat, METRICS.items()):
-                samples = [np.array([float(r[metric]) for r in selected if r["value"] == v])
-                           for v in values]
-                means = [s.mean() for s in samples]
-                if categorical:
-                    ax.bar(values, means)
-                else:
-                    ax.plot([float(v) for v in values], means, marker="o")
-                    ax.set_xticks([float(v) for v in values], values)
-                ax.set_xlabel("nlist (constant nprobe/nlist ratio)" if experiment == "nlist_ratio"
-                              else experiment)
-                ax.set_ylabel(f"Recall@{k}" if metric == "recall" else label)
-                ax.grid(axis="y", alpha=0.25)
-                if metric == "recall":
-                    ax.set_ylim(0, 1.05)
-            fig.suptitle(f"{path.stem.upper()} — {experiment}, k={k}")
-            target = fig_dir / f"{path.stem}_{experiment}_k{k}.png"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(target, dpi=180)
-            plt.close(fig)
-            saved.append(target)
-    return saved
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -178,7 +135,7 @@ def main():
     for dataset in args.datasets:
         path = args.out_dir / f"{dataset}.csv" if args.plot_only else run_study(dataset, args)
         print(f"Results: {path}")
-        for saved in plot_results(path, args.fig_dir):
+        for saved in plot_ivf_pq_ablation(path, args.fig_dir):
             print(f"Plot: {saved}")
 
 

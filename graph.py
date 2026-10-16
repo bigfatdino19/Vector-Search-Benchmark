@@ -290,6 +290,49 @@ def plot_ivf_pq(results_dir=RESULTS_DIR, fig_dir=FIG_DIR):
     return saved
 
 
+def plot_ivf_pq_ablation(path, fig_dir=FIG_DIR / "ivf_pq_ablation"):
+    """Plot the saved measurements for each configuration."""
+    path, fig_dir = Path(path), Path(fig_dir)
+    metrics = {
+        "recall": "Recall", "query_time_ms": "Query time (ms/query)",
+        "index_size_mb": "Index size (MB)", "build_time_s": "Build time (s)",
+    }
+
+    with path.open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    saved = []
+    for experiment in dict.fromkeys(row["experiment"] for row in rows):
+        for k in sorted({int(row["k"]) for row in rows}):
+            selected = [r for r in rows if r["experiment"] == experiment and int(r["k"]) == k]
+            values = list(dict.fromkeys(r["value"] for r in selected))
+            categorical = experiment in ("components", "exhaustive")
+            if not categorical:
+                values.sort(key=float)
+            fig, axes = plt.subplots(2, 2, figsize=(10, 7), layout="constrained")
+            for ax, (metric, label) in zip(axes.flat, metrics.items()):
+                samples = [[float(r[metric]) for r in selected if r["value"] == v]
+                           for v in values]
+                means = [sum(sample) / len(sample) for sample in samples]
+                if categorical:
+                    ax.bar(values, means)
+                else:
+                    ax.plot([float(v) for v in values], means, marker="o")
+                    ax.set_xticks([float(v) for v in values], values)
+                ax.set_xlabel("nlist (constant nprobe/nlist ratio)" if experiment == "nlist_ratio"
+                              else experiment)
+                ax.set_ylabel(f"Recall@{k}" if metric == "recall" else label)
+                ax.grid(axis="y", alpha=0.25)
+                if metric == "recall":
+                    ax.set_ylim(0, 1.05)
+            fig.suptitle(f"{path.stem.upper()} — {experiment}, k={k}")
+            target = fig_dir / f"{path.stem}_{experiment}_k{k}.png"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(target, dpi=180)
+            plt.close(fig)
+            saved.append(target)
+    return saved
+
+
 # Method name (as used by main.py and the CSV file names) -> its graph function.
 GRAPHS = {
     "linear_scan": plot_linear_scan,
