@@ -76,6 +76,7 @@ python graph.py ivf pq                                 # same as above, without 
 | `--out-dir`     | `results/`     | Where the CSVs are written                 |
 | `--fig-dir`     | `figures/`     | Where the graphs are written               |
 | `--plot-only`   | off            | Skip the runs and only redraw graphs       |
+| `--skip-ablation` | off          | Skip the ablation study when IVF-PQ is selected |
 
 Each index is built once per parameter setting and then searched once per `k`. Results
 are written to `results/<method>.csv` after each method finishes. Existing rows are kept,
@@ -91,10 +92,14 @@ scan vs IVF vs PQ vs IVF-PQ), single-parameter sweeps of `nprobe`, `nlist`, `m` 
 `nprobe/nlist` ratio.
 
 ```bash
+python -m experiments.ivf_pq_ablation
 python -m experiments.ivf_pq_ablation --datasets sift gist glove --k 10
 python -m experiments.ivf_pq_ablation --experiments nprobe m --threads 1
-python -m experiments.ivf_pq_ablation --plot-only
+python -m experiments.ivf_pq_ablation --plot-only --datasets sift gist glove
 ```
+
+`main.py` and the standalone script defaults to SIFT, all ablation experiments, the full base dataset, 1,000 queries, `k=10`, and one Faiss thread.
+Use `--datasets gist glove` to select GIST and GloVe. 
 
 Results go to `results/ivf_pq_ablation/<dataset>.csv` and graphs to
 `figures/ivf_pq_ablation/`.
