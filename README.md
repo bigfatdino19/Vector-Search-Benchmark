@@ -98,7 +98,7 @@ python -m experiments.ivf_pq_ablation --experiments nprobe m --threads 1
 python -m experiments.ivf_pq_ablation --plot-only --datasets sift gist glove
 ```
 
-`main.py` and the standalone script defaults to SIFT, all ablation experiments, the full base dataset, 1,000 queries, `k=10`, and one Faiss thread.
+`main.py` runs the ablation study on all three datasets by default, using `k=1, 10, 100`. The standalone ablation script defaults to SIFT and `k=10`.
 Use `--datasets gist glove` to select GIST and GloVe. 
 
 Results go to `results/ivf_pq_ablation/<dataset>.csv` and graphs to
