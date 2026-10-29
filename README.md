@@ -1,4 +1,6 @@
-# SC4020 Group 15 — Similarity Search
+# Vector Search Benchmark
+
+Developed in fulfilment of the project requirements for SC4020 Data Analytics and Mining at Nanyang Technological University.
 
 A benchmark of exact and approximate nearest-neighbour (k-NN) search methods on three
 standard vector datasets. Every method is built, queried and scored through the same
